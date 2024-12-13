@@ -159,8 +159,7 @@ uint8_t ieee802154_header(const uint16_t *src_pan, ieee802154_address_t *src, co
         position += 8;
         LOGI(TAG_802154, "Length FCS+SequenceNumber+DstPAN+DstAddr+SrcPAN+SrcAddrLong:%d", position);
     }
-    LOGI(TAG_802154, "Total Header Lenght: %d", position);
-
+    LOGI(TAG_802154, " Header Lenght: %d", position);
     return position;
 }
 
