@@ -142,6 +142,7 @@ esp_err_t xIeee802154NetworkInterfaceInput(void *buffer, uint16_t len, void *eb)
         pxNetworkBuffer->xDataLength = len;
 
         vHandleIEEE802154Frame(pxNetworkBuffer);
+		vReleaseNetworkBufferAndDescriptor(pxNetworkBuffer);
         return ESP_OK;
     }
     else
