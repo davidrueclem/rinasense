@@ -92,8 +92,7 @@ bool_t xIeee802154NetworkInterfaceInitialise(MACAddress_t *pxPhyDev)
     return true;
 }
 
-bool_t xIeee802154NetworkInterfaceConnect(void)
-
+bool_t xIeee802154NetworkInterfaceConnect(void){
     LOGI(TAG_802154, "Connecting to IEEE 802.15.4 network");
 
 #ifdef ieee802154_COORDINATOR
