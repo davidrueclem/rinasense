@@ -81,36 +81,18 @@ void vIeee802154FrameSend(uint8_t *pucBuffer, uint16_t usLength)
         return;
     }
 
-    uint16_t pan_id = ieee802154_PANID_SOURCE;
-    esp_ieee802154_set_panid(pan_id);
+    LOGI(TAG_802154, "Transmitting IEEE 802.15.4 frame");
 
-    ieee802154_address_t srcAddr;
-    ieee802154_address_t dstAddr;
-
-    uint8_t eui64[8];
-    esp_ieee802154_get_extended_address(eui64);
-    srcAddr.mode = ADDR_MODE_LONG;
-    memcpy(srcAddr.long_address, eui64, sizeof(eui64));
-
-    dstAddr.mode = ADDR_MODE_SHORT;
-    dstAddr.short_address = SHORT_BROADCAST;
-
-    uint8_t buffer[256];
-    uint8_t hdrLen = ieee802154_header(&pan_id, &srcAddr, &pan_id, &dstAddr, false, &buffer[1], sizeof(buffer) - 1);
-
-    memcpy(&buffer[1 + hdrLen], pucBuffer, usLength);
-
-    buffer[0] = hdrLen + usLength;
-
-    if (esp_ieee802154_transmit(buffer, false) == ESP_OK)
+    if (esp_ieee802154_transmit(pucBuffer, false) == ESP_OK)
     {
-        LOGI(TAG_802154, "Frame sent successfully");
+        LOGI(TAG_802154, "Frame transmitted successfully");
     }
     else
     {
-        LOGE(TAG_802154, "Failed to send frame");
+        LOGE(TAG_802154, "Failed to transmit frame");
     }
 }
+
 
 /* Helper function to print received IEEE 802.15.4 frame details */
 static void debug_print_packet(uint8_t *packet, uint8_t packet_length)
@@ -168,5 +150,109 @@ static void debug_print_packet(uint8_t *packet, uint8_t packet_length)
         ESP_LOGI(TAG_802154, "Originating from long address %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x",
                  src_addr[0], src_addr[1], src_addr[2], src_addr[3],
                  src_addr[4], src_addr[5], src_addr[6], src_addr[7]);
+    }
+}
+
+static void reverse_memcpy(uint8_t *restrict dst, const uint8_t *restrict src, size_t n);
+
+uint8_t ieee802154_header(const uint16_t *src_pan, ieee802154_address_t *src, const uint16_t *dst_pan,
+                          ieee802154_address_t *dst, uint8_t ack, uint8_t *header, uint8_t header_length) {
+    uint8_t frame_header_len = 2;
+    mac_fcs_t frame_header = {
+            .frameType = FRAME_TYPE_DATA,
+            .secure = false,
+            .framePending = false,
+            .ackReqd = ack,
+            .panIdCompressed = false,
+            .rfu1 = false,
+            .sequenceNumberSuppression = false,
+            .informationElementsPresent = false,
+            .destAddrType = dst->mode,
+            .frameVer = FRAME_VERSION_STD_2003,
+            .srcAddrType = src->mode
+    };
+
+    bool src_present = src != NULL && src->mode != ADDR_MODE_NONE;
+    bool dst_present = dst != NULL && dst->mode != ADDR_MODE_NONE;
+    bool src_pan_present = src_pan != NULL;
+    bool dst_pan_present = dst_pan != NULL;
+
+    if (src_pan_present && dst_pan_present && src_present && dst_present) {
+        if (*src_pan == *dst_pan) {
+            frame_header.panIdCompressed = true;
+        }
+    }
+
+    if (!frame_header.sequenceNumberSuppression) {
+        frame_header_len += 1;
+    }
+
+    if (dst_pan_present) {
+        frame_header_len += 2;
+    }
+
+    if (frame_header.destAddrType == ADDR_MODE_SHORT) {
+        frame_header_len += 2;
+    } else if (frame_header.destAddrType == ADDR_MODE_LONG) {
+        frame_header_len += 8;
+    }
+
+    if (src_pan_present && !frame_header.panIdCompressed) {
+        frame_header_len +=2;
+    }
+
+    if (frame_header.srcAddrType == ADDR_MODE_SHORT) {
+        frame_header_len += 2;
+    } else if (frame_header.srcAddrType == ADDR_MODE_LONG) {
+        frame_header_len += 8;
+    }
+
+    if (header_length < frame_header_len) {
+        return 0;
+    }
+
+    uint8_t position = 0;
+    memcpy(&header[position], &frame_header, sizeof frame_header);
+    position += 2;
+
+    if (!frame_header.sequenceNumberSuppression) {
+        header[position++] = 0;
+    }
+
+    if (dst_pan != NULL) {
+        memcpy(&header[position], dst_pan, sizeof(uint16_t));
+        position += 2;
+    }
+
+    if (frame_header.destAddrType == ADDR_MODE_SHORT) {
+        memcpy(&header[position], &dst->short_address, sizeof dst->short_address);
+        position += 2;
+    } else if (frame_header.destAddrType == ADDR_MODE_LONG) {
+        reverse_memcpy(&header[position], (uint8_t *)&dst->long_address, sizeof dst->long_address);
+        position += 8;
+    }
+
+    if (src_pan != NULL && !frame_header.panIdCompressed) {
+        memcpy(&header[position], src_pan, sizeof(uint16_t));
+        position += 2;
+    }
+
+    if (frame_header.srcAddrType == ADDR_MODE_SHORT) {
+        memcpy(&header[position], &src->short_address, sizeof src->short_address);
+        position += 2;
+    } else if (frame_header.srcAddrType == ADDR_MODE_LONG) {
+        reverse_memcpy(&header[position], (uint8_t *)&src->long_address, sizeof src->long_address);
+        position += 8;
+    }
+
+    return position;
+}
+
+static void reverse_memcpy(uint8_t *restrict dst, const uint8_t *restrict src, size_t n)
+{
+    size_t i;
+
+    for (i=0; i < n; ++i) {
+        dst[n - 1 - i] = src[i];
     }
 }

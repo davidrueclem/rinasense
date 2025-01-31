@@ -15,10 +15,12 @@
 #include "shim_IPCP_events.h"
 
 #include "ieee802154_NetworkInterface.h"
+#include "ieee802154_IPCP_frame.h"
 #include "IPCP_instance.h"
 #include "IPCP_manager.h"
 #include "ieee802154_IPCP.h"
-
+@include "ieee802154_IPCP.h"
+#include "IPCP.h"
 #include "Arp826.h"
 #include "du.h"
 
@@ -49,6 +51,102 @@ struct ipcpInstanceData_t
     unsigned int ucTxBusy;
 };
 
+bool_t xShimIEEE802154SDUWrite(struct ipcpInstanceData_t *pxData, portId_t xId, struct du_t *pxDu, bool_t uxBlocking)
+{
+    shimFlow_t *pxFlow;
+    NetworkBufferDescriptor_t *pxNetworkBuffer;
+    ieee802154_address_t srcAddr, dstAddr;
+    uint8_t buffer[256];
+    uint8_t hdrLen;
+    struct timespec ts;
+    RINAStackEvent_t xTxEvent = {
+        .eEventType = eNetworkTxEvent,
+        .xData.PV = NULL};
+
+    LOGI(TAG_SHIM_802154, "SDU write received");
+
+    if (!pxData)
+    {
+        LOGE(TAG_SHIM_802154, "Invalid instance data");
+        return false;
+    }
+
+    size_t uxLength = pxDu->pxNetworkBuffer->xDataLength;
+
+    if (uxLength > IEEE802154_MTU)
+    {
+        LOGE(TAG_SHIM_802154, "SDU too large (%zu), dropping", uxLength);
+        xDuDestroy(pxDu);
+        return false;
+    }
+
+    pxFlow = prvShimFindFlowByPortId(pxData, xId);
+    if (!pxFlow)
+    {
+        LOGE(TAG_SHIM_802154, "Flow does not exist, dropping packet");
+        xDuDestroy(pxDu);
+        return false;
+    }
+
+    if (pxFlow->ePortIdState != eALLOCATED)
+    {
+        LOGE(TAG_SHIM_802154, "Flow is not in the right state to send packets");
+        xDuDestroy(pxDu);
+        return false;
+    }
+
+    LOGI(TAG_SHIM_802154, "Setting up IEEE 802.15.4 addresses");
+
+    uint16_t pan_id = ieee802154_PANID_SOURCE;
+    esp_ieee802154_set_panid(pan_id);
+
+
+    srcAddr.mode = ADDR_MODE_LONG;
+    esp_ieee802154_get_extended_address(srcAddr.long_address); 
+
+
+    dstAddr.mode = ADDR_MODE_SHORT;
+    dstAddr.short_address = 0x5678;  // Hardcoded Short Address
+
+    LOGI(TAG_SHIM_802154, "Building IEEE 802.15.4 Header");
+
+    hdrLen = ieee802154_header(&pan_id, &srcAddr, &pan_id, &dstAddr, false, &buffer[1], sizeof(buffer) - 1);
+
+    LOGI(TAG_SHIM_802154, "Allocating network buffer with header and payload");
+
+    pxNetworkBuffer = pxGetNetworkBufferWithDescriptor(hdrLen + uxLength, 250 * 1000);
+    if (pxNetworkBuffer == NULL)
+    {
+        LOGE(TAG_SHIM_802154, "Failed to allocate network buffer");
+        xDuDestroy(pxDu);
+        return false;
+    }
+
+    buffer[0] = hdrLen + uxLength;
+    memcpy(&buffer[1 + hdrLen], pxDu->pxNetworkBuffer->pucEthernetBuffer, uxLength);
+    memcpy(pxNetworkBuffer->pucEthernetBuffer, buffer, hdrLen + uxLength);
+    pxNetworkBuffer->xDataLength = hdrLen + uxLength;
+
+    LOGI(TAG_SHIM_802154, "Destroying DU after copying to network buffer");
+    xDuDestroy(pxDu);
+
+    xTxEvent.xData.PV = (void *)pxNetworkBuffer;
+
+    if (xSendEventStructToIPCPTask(&xTxEvent, 250 * 1000) == false)
+    {
+        LOGE(TAG_SHIM_802154, "Failed to enqueue packet to network stack %p, len %zu",
+             pxNetworkBuffer, pxNetworkBuffer->xDataLength);
+        vReleaseNetworkBufferAndDescriptor(pxNetworkBuffer);
+        return false;
+    }
+
+    LOGI(TAG_SHIM_802154, "Data sent to IPCP Task");
+
+    return true;
+}
+
+
+
 /** @brief Enrollment operation must be called by the IPCP manager after initializing
  * the shim IPCP task.
  * @param pxShimInstanceData is a pointer in the IPCP instance data. The IPCP instance is stored at the
@@ -63,7 +161,7 @@ bool_t xShim802154EnrollToDIF(struct ipcpInstanceData_t *pxShimInstanceData)
     if (xIeee802154NetworkInterfaceInitialise(pxShimInstanceData->pxPhyDev))
     {
         /* Initialize ARP Cache */
-        vARPInitCache();
+        //vARPInitCache();
 
         /* If Coordinator then init PAN, otherwise try to connect to Coordinator */
         if (xIeee802154NetworkInterfaceConnect())
@@ -144,7 +242,7 @@ bool_t xShim802154ApplicationRegister(struct ipcpInstanceData_t *pxData, name_t 
         return false;
     }
 
-    pxData->pxAppHandle = pxARPAdd(pxPa, pxHa);
+    /*pxData->pxAppHandle = pxARPAdd(pxPa, pxHa);
 
     if (!pxData->pxAppHandle)
     {
@@ -154,7 +252,7 @@ bool_t xShim802154ApplicationRegister(struct ipcpInstanceData_t *pxData, name_t 
         vGHADestroy(pxHa);
         vRstrNameFini(pxData->pxAppName);
         return false;
-    }
+    }*/
 
     // vShimGPADestroy( pa );
 
@@ -162,8 +260,8 @@ bool_t xShim802154ApplicationRegister(struct ipcpInstanceData_t *pxData, name_t 
 
     if (!pxData->pxDafName)
     {
-        LOGE(TAG_SHIM_802154, "Removing ARP Entry for DAF");
-        xARPRemove(pxData->pxAppHandle->pxPa, pxData->pxAppHandle->pxHa);
+        //LOGE(TAG_SHIM_802154, "Removing ARP Entry for DAF");
+        //xARPRemove(pxData->pxAppHandle->pxPa, pxData->pxAppHandle->pxHa);
         pxData->pxAppHandle = NULL;
         vRstrNameFree(pxData->pxAppName);
         vGHADestroy(pxHa);
@@ -175,7 +273,7 @@ bool_t xShim802154ApplicationRegister(struct ipcpInstanceData_t *pxData, name_t 
     if (!xIsGPAOK(pxPa))
     {
         LOGE(TAG_SHIM_802154, "Failed to create gpa");
-        xARPRemove(pxData->pxAppHandle->pxPa, pxData->pxAppHandle->pxHa);
+        //xARPRemove(pxData->pxAppHandle->pxPa, pxData->pxAppHandle->pxHa);
         pxData->pxAppHandle = NULL;
         vRstrNameFree(pxData->pxDafName);
         vRstrNameFree(pxData->pxAppName);
@@ -183,12 +281,12 @@ bool_t xShim802154ApplicationRegister(struct ipcpInstanceData_t *pxData, name_t 
         return false;
     }
 
-    pxData->pxDafHandle = pxARPAdd(pxPa, pxHa);
+    //pxData->pxDafHandle = pxARPAdd(pxPa, pxHa);
 
     if (!pxData->pxDafHandle)
     {
-        LOGE(TAG_SHIM_802154, "Failed to register DAF in ARP");
-        xARPRemove(pxData->pxAppHandle->pxPa, pxData->pxAppHandle->pxHa);
+        //LOGE(TAG_SHIM_802154, "Failed to register DAF in ARP");
+        //xARPRemove(pxData->pxAppHandle->pxPa, pxData->pxAppHandle->pxHa);
         pxData->pxAppHandle = NULL;
         vRstrNameFree(pxData->pxAppName);
         vRstrNameFree(pxData->pxDafName);
@@ -197,7 +295,7 @@ bool_t xShim802154ApplicationRegister(struct ipcpInstanceData_t *pxData, name_t 
         return false;
     }
 
-    vARPPrintCache();
+    //vARPPrintCache();
 
     return true;
 }
@@ -286,12 +384,12 @@ bool_t xShim802154FlowAllocateRequest(struct ipcpInstanceData_t *pxData, struct 
         }
 
         //************ RINAARP RESOLVE GPA
-
+        /*
         if (!xARPResolveGPA(pxFlow->pxDestPa, pxData->pxAppHandle->pxPa, pxData->pxAppHandle->pxHa))
         {
             prvShimUnbindDestroyFlow(pxData, pxFlow);
             return false;
-        }
+        }*/ //pxFlow-> investigar y rellenar datos(destino,etc)
     }
     else if (pxFlow->ePortIdState == ePENDING)
     {

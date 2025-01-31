@@ -273,7 +273,8 @@ static void *prvIPCPTask(void *pvParameters)
 
             /* Send a network packet. The ownership will  be transferred to
              * the driver, which will release it after delivery. */
-            xNetworkInterfaceOutput(pxDescriptor, true);
+            //xNetworkInterfaceOutput(pxDescriptor, true);
+            xIeee802154NetworkInterfaceOutput(pxDescriptor, true)
         }
         break;
 

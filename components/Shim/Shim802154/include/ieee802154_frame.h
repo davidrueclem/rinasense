@@ -68,6 +68,9 @@ extern "C"
         uint8_t srcAddrType : 2;
     } mac_fcs_t;
 
+
+    uint8_t ieee802154_header(const uint16_t *src_pan, ieee802154_address_t *src, const uint16_t *dst_pan,
+                          ieee802154_address_t *dst, uint8_t ack, uint8_t *header, uint8_t header_length);
     typedef enum IEEE802154_FRAMES_PROCESSING
     {
         eIeee802154ReleaseBuffer = 0,   /* Processing the frame did not find anything to do - just release the buffer. */

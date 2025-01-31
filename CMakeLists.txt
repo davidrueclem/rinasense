@@ -156,7 +156,9 @@ else()
       "components/Portability/include/portability/rsqueue.h"
       "components/Portability/include/portability/rstime.h"
       "components/Common/include/common/rina_gpha.h"
-      "components/Common/include/common/rina_name.h")
+      "components/Common/include/common/rina_name.h"
+      "components/Shim/Shim802154/include/iee80215_NetworkInterface.h"
+      "components/Shim/Shim802154/include/iee80215_IPCP_frame.h")
 
     # Declare the shared library.
     add_library(RINA SHARED ${shared_library_objects})

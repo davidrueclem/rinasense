@@ -248,7 +248,7 @@ BaseType_t xNetworkInterfaceOutput(NetworkBufferDescriptor_t *const pxNetworkBuf
 								   BaseType_t xReleaseAfterSend)
 {
 	LOGE(TAG_WIFI, "Interface called");
-	if ((pxNetworkBuffer == NULL) || (pxNetworkBuffer->pucEthernetBuffer == NULL) || (pxNetworkBuffer->xDataLength == 0))
+	if ((pxNetworkBuffer == NULL) || (pxNetworkBuffer-> == NULL) || (pxNetworkBuffer->xDataLength == 0))
 	{
 		LOGE(TAG_WIFI, "Invalid parameters");
 		return pdFALSE;
@@ -333,6 +333,7 @@ esp_err_t xNetworkInterfaceInput(void *buffer, uint16_t len, void *eb)
 		memcpy(pxNetworkBuffer->pucEthernetBuffer, buffer, len);
 
 		/* We need to look into the frame data. */
+	
 		pxEthernetHeader = (EthernetHeader_t *)pxNetworkBuffer->pucEthernetBuffer;
 
 		uint8_t ucMACAddress[MAC_ADDRESS_LENGTH_BYTES];

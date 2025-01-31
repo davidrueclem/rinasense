@@ -155,16 +155,19 @@ bool_t xIeee802154NetworkInterfaceOutput(NetworkBufferDescriptor_t *const pxNetw
 {
     if (pxNetworkBuffer == NULL || pxNetworkBuffer->pucEthernetBuffer == NULL || pxNetworkBuffer->xDataLength == 0)
     {
-        LOGE(TAG_802154, "Invalid parameters");
+        LOGE(TAG_802154, "Invalid parameters for network output");
         return false;
     }
 
     if (xInterfaceState == DOWN)
     {
-        LOGI(TAG_802154, "Interface down");
+        LOGI(TAG_802154, "IEEE 802.15.4 interface is down");
         return false;
     }
 
+    LOGI(TAG_802154, "Forwarding packet to IEEE 802.15.4 frame handler");
+
+    // Enviar los datos al Frame para ser transmitidos
     vIeee802154FrameSend(pxNetworkBuffer->pucEthernetBuffer, pxNetworkBuffer->xDataLength);
 
     LOGI(TAG_802154, "Packet sent successfully");
